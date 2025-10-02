@@ -1,5 +1,5 @@
 """
-Flask web application for FaceAlert Admin Dashboard - SPEED OPTIMIZED VERSION.
+Flask web application for FaceAlert Admin Dashboard.
 """
 import os
 import cv2
@@ -110,23 +110,36 @@ def submit_report():
         # Step 4: Compare ALL uploaded faces with ALL database faces
         print("Step 4: Comparing ALL faces in uploaded image with database images...")
         matched_local_images = []
-        MAX_FILES_TO_PROCESS = 50  # ⚡ OPTIMIZED: Reduced from 75 for speed (33% faster)
+        MAX_FILES_TO_PROCESS = 75  # Increased to focus on group photos
         
         try:
             local_image_files = get_image_files(LOCAL_IMAGES_FOLDER)
             print(f"Found {len(local_image_files)} images in local folder (processing max {MAX_FILES_TO_PROCESS})")
             
-            # ⚡ OPTIMIZED: Sort by file size (larger = better quality) - MUCH faster than face detection
-            local_image_files.sort(key=lambda x: os.path.getsize(x) if os.path.exists(x) else 0, reverse=True)
+            # Sort images to prioritize group photos (images with multiple faces)
+            def get_group_photo_priority(image_path):
+                try:
+                    # Quick face count check to prioritize group photos
+                    temp_image = cv2.imread(image_path)
+                    if temp_image is not None:
+                        temp_rgb = cv2.cvtColor(temp_image, cv2.COLOR_BGR2RGB)
+                        # Resize for quick processing
+                        h, w = temp_rgb.shape[:2]
+                        if w > 400:
+                            scale = 400 / w
+                            new_h, new_w = int(h * scale), int(w * scale)
+                            temp_rgb = cv2.resize(temp_rgb, (new_w, new_h))
+                        
+                        faces = processor.detect_faces(temp_rgb)
+                        return len(faces) if faces else 0
+                except:
+                    return 0
+                return 0
             
-            excellent_match_count = 0  # ⚡ OPTIMIZED: Early termination counter
+            # Sort by group photo priority (more faces = higher priority)
+            local_image_files.sort(key=get_group_photo_priority, reverse=True)
             
             for idx, image_path in enumerate(local_image_files[:MAX_FILES_TO_PROCESS]):
-                # ⚡ OPTIMIZED: Early termination if we have enough excellent matches
-                if excellent_match_count >= 10:
-                    print(f"⚡ Early termination: Found {excellent_match_count} excellent matches, stopping...")
-                    break
-                
                 try:
                     local_image = cv2.imread(image_path)
                     
@@ -150,8 +163,14 @@ def submit_report():
                             # Boost similarity for group photos (more faces = higher priority)
                             group_boost = 1.0 + (face_count - 1) * 0.1  # 10% boost per additional face
                             
-                            # ⚡ OPTIMIZED: Simplified medium face boost (no extra detection needed)
-                            medium_face_boost = 1.15 if face_count > 5 else 1.0
+                            # Additional boost for medium-sized faces (30-70 pixels)
+                            medium_face_boost = 1.0
+                            if hasattr(processor, 'detect_faces'):
+                                # Check if any faces are medium-sized
+                                temp_faces = processor.detect_faces(local_image_rgb)
+                                medium_faces = [f for f in temp_faces if f.get('is_medium_face', False)]
+                                if medium_faces:
+                                    medium_face_boost = 1.15  # 15% boost for medium-sized faces
                             
                             adjusted_similarity = best_similarity * group_boost * medium_face_boost
                             
@@ -167,10 +186,6 @@ def submit_report():
                                     'is_group_photo': face_count > 1
                                 })
                                 print(f"Match found: {os.path.basename(image_path)} with similarity {adjusted_similarity:.2f} (faces: {face_count})")
-                                
-                                # ⚡ OPTIMIZED: Track excellent matches for early termination
-                                if adjusted_similarity > 1.0:
-                                    excellent_match_count += 1
                 except Exception as e:
                     print(f"Error processing local file {image_path}: {str(e)}")
                     continue
