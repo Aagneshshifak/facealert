@@ -91,24 +91,26 @@ def submit_report():
         
         image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Extract embedding
-        embedding = processor.extract_embedding(image_rgb)
+        # Extract ALL face embeddings (for group photos)
+        uploaded_embeddings = processor.extract_all_embeddings(image_rgb)
         
-        if embedding is None:
+        if not uploaded_embeddings:
             return jsonify({
                 'found': False,
                 'score': 0.0,
                 'message': 'No face detected in the photo'
             })
         
-        # Step 3: Compare with stored embeddings
-        print("Step 3: Comparing with stored embeddings...")
-        found, score, person_data = embeddings_store.find_match(embedding, threshold=0.3)
+        print(f"Found {len(uploaded_embeddings)} faces in uploaded image")
         
-        # Step 4: Compare with images from local folder
-        print("Step 4: Comparing with local folder images...")
+        # Step 3: Compare with stored embeddings (using first uploaded face)
+        print("Step 3: Comparing with stored embeddings...")
+        found, score, person_data = embeddings_store.find_match(uploaded_embeddings[0], threshold=0.2)
+        
+        # Step 4: Compare ALL uploaded faces with ALL database faces
+        print("Step 4: Comparing ALL faces in uploaded image with database images...")
         matched_local_images = []
-        MAX_FILES_TO_PROCESS = 100 
+        MAX_FILES_TO_PROCESS = 150
         
         try:
             local_image_files = get_image_files(LOCAL_IMAGES_FOLDER)
@@ -120,20 +122,26 @@ def submit_report():
                     
                     if local_image is not None:
                         local_image_rgb = cv2.cvtColor(local_image, cv2.COLOR_BGR2RGB)
-                        local_embedding = processor.extract_embedding(local_image_rgb)
+                        # Extract ALL faces from database image
+                        local_embeddings = processor.extract_all_embeddings(local_image_rgb)
                         
-                        if local_embedding is not None:
-                            similarity = np.dot(embedding, local_embedding) / (
-                                np.linalg.norm(embedding) * np.linalg.norm(local_embedding)
-                            )
+                        if local_embeddings:
+                            # Compare each uploaded face with each database face
+                            best_similarity = 0.0
+                            for uploaded_embedding in uploaded_embeddings:
+                                for local_embedding in local_embeddings:
+                                    similarity = np.dot(uploaded_embedding, local_embedding) / (
+                                        np.linalg.norm(uploaded_embedding) * np.linalg.norm(local_embedding)
+                                    )
+                                    best_similarity = max(best_similarity, similarity)
                             
-                            if similarity > 0.3:
+                            if best_similarity > 0.2:  # Ultra-low threshold for group photos
                                 matched_local_images.append({
                                     'path': image_path,
                                     'name': os.path.basename(image_path),
-                                    'similarity': float(similarity)
+                                    'similarity': float(best_similarity)
                                 })
-                                print(f"Match found: {os.path.basename(image_path)} with similarity {similarity:.2f}")
+                                print(f"Match found: {os.path.basename(image_path)} with similarity {best_similarity:.2f}")
                 except Exception as e:
                     print(f"Error processing local file {image_path}: {str(e)}")
                     continue

@@ -127,6 +127,29 @@ class FaceProcessor:
         
         return faces[0]['embedding']
     
+    def extract_all_embeddings(self, image: np.ndarray) -> List[np.ndarray]:
+        """
+        Extract ALL face embeddings from an image (for group photos).
+        
+        Args:
+            image: Input image in RGB format
+            
+        Returns:
+            List of face embedding vectors
+        """
+        faces = self.detect_faces(image)
+        
+        if not faces:
+            return []
+        
+        # Return ALL face embeddings, not just the largest
+        embeddings = []
+        for face in faces:
+            embeddings.append(face['embedding'])
+        
+        logger.info(f"Extracted {len(embeddings)} face embeddings from image")
+        return embeddings
+    
     def process_image(self, image_path: str) -> List[Dict]:
         """
         Process a single image and extract face information.
