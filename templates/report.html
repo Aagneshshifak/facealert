@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FaceAlert – Missing Person Report</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f8f9fa;
+            color: #2c3e50;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background-color: white;
+            padding: 24px 32px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+        }
+        
+        .header-title {
+            font-size: 22px;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+        
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            padding: 48px 40px;
+            width: 100%;
+            max-width: 500px;
+        }
+        
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 32px;
+            text-align: center;
+        }
+        
+        .form-group {
+            margin-bottom: 28px;
+        }
+        
+        .form-label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #495057;
+            margin-bottom: 10px;
+        }
+        
+        .file-input-wrapper {
+            position: relative;
+            display: block;
+        }
+        
+        .file-input {
+            width: 100%;
+            padding: 14px 16px;
+            font-size: 14px;
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            color: #6c757d;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .file-input:hover {
+            border-color: #adb5bd;
+            background-color: white;
+        }
+        
+        .file-input:focus {
+            outline: none;
+            border-color: #475569;
+            border-style: solid;
+        }
+        
+        .file-info {
+            margin-top: 8px;
+            font-size: 13px;
+            color: #6c757d;
+        }
+        
+        .submit-button {
+            width: 100%;
+            padding: 14px;
+            font-size: 15px;
+            font-weight: 500;
+            color: white;
+            background-color: #475569;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 16px;
+        }
+        
+        .submit-button:hover {
+            background-color: #334155;
+        }
+        
+        .submit-button:active {
+            background-color: #1e293b;
+        }
+        
+        .submit-button:disabled {
+            background-color: #cbd5e1;
+            cursor: not-allowed;
+        }
+        
+        .message {
+            margin-top: 20px;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+            display: none;
+        }
+        
+        .message.success {
+            background-color: #d1e7dd;
+            color: #0f5132;
+            display: block;
+        }
+        
+        .message.error {
+            background-color: #f8d7da;
+            color: #842029;
+            display: block;
+        }
+        
+        .result-box {
+            margin-top: 20px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .result-box.show {
+            display: block;
+        }
+        
+        .result-box.found {
+            background-color: #d1e7dd;
+            border: 2px solid #badbcc;
+        }
+        
+        .result-box.not-found {
+            background-color: #fff3cd;
+            border: 2px solid #ffecb5;
+        }
+        
+        .result-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        
+        .result-box.found .result-title {
+            color: #0f5132;
+        }
+        
+        .result-box.not-found .result-title {
+            color: #664d03;
+        }
+        
+        .result-detail {
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        
+        .result-box.found .result-detail {
+            color: #0a3622;
+        }
+        
+        .result-box.not-found .result-detail {
+            color: #856404;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            margin-top: 20px;
+            color: #6c757d;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .matches-section {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(0, 0, 0, 0.1);
+        }
+        
+        .matches-title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #0a3622;
+        }
+        
+        .match-item {
+            padding: 12px;
+            background-color: rgba(255, 255, 255, 0.5);
+            border-radius: 6px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .match-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 6px;
+            border: 2px solid #badbcc;
+        }
+        
+        .match-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+        }
+        
+        .match-name {
+            font-size: 13px;
+            color: #0a3622;
+            font-weight: 500;
+            word-break: break-all;
+        }
+        
+        .match-score {
+            font-size: 12px;
+            font-weight: 600;
+            color: #0f5132;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1 class="header-title">FaceAlert – Missing Person Report</h1>
+    </header>
+    
+    <div class="main-content">
+        <div class="card">
+            <h2 class="card-title">Submit Missing Person Information</h2>
+            
+            <form id="reportForm">
+                
+                <div class="form-group">
+                    <label class="form-label" for="photo">Missing Person's Photo</label>
+                    <input 
+                        type="file" 
+                        id="photo" 
+                        class="file-input" 
+                        accept=".png,.jpg,.jpeg,.gif"
+                        required
+                    >
+                    <div class="file-info" id="photoInfo">No file selected</div>
+                </div>
+                
+                <button type="submit" class="submit-button" id="submitBtn">Submit Report</button>
+                
+                <div class="loading" id="loading">
+                    Processing face recognition...
+                </div>
+                
+                <div class="result-box" id="resultBox">
+                    <div class="result-title" id="resultTitle"></div>
+                    <div class="result-detail" id="resultDetail"></div>
+                    <div class="matches-section" id="matchesSection" style="display: none;">
+                        <div class="matches-title">Matching Images:</div>
+                        <div id="matchesList"></div>
+                    </div>
+                </div>
+                
+                <div class="message" id="message"></div>
+            </form>
+        </div>
+    </div>
+    
+    <script>
+        const photoInput = document.getElementById('photo');
+        const photoInfo = document.getElementById('photoInfo');
+        const reportForm = document.getElementById('reportForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const loading = document.getElementById('loading');
+        const message = document.getElementById('message');
+        const resultBox = document.getElementById('resultBox');
+        const resultTitle = document.getElementById('resultTitle');
+        const resultDetail = document.getElementById('resultDetail');
+        
+        photoInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                photoInfo.textContent = `Selected: ${file.name}`;
+                photoInfo.style.color = '#495057';
+            } else {
+                photoInfo.textContent = 'No file selected';
+                photoInfo.style.color = '#6c757d';
+            }
+        });
+        
+        reportForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const photoFile = photoInput.files[0];
+            
+            if (!photoFile) {
+                showMessage('Please select a photo', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('photo', photoFile);
+            
+            submitBtn.disabled = true;
+            loading.classList.add('show');
+            message.style.display = 'none';
+            resultBox.classList.remove('show', 'found', 'not-found');
+            
+            try {
+                const response = await fetch('/report/submit', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (data.message) {
+                        showMessage(data.message, 'error');
+                    } else                     if (data.found) {
+                        resultBox.className = 'result-box show found';
+                        resultTitle.textContent = '✓ Person Found!';
+                        let detailText = `Match confidence: ${(data.score * 100).toFixed(0)}%`;
+                        if (data.person && data.person.name) {
+                            detailText += `\nIdentified as: ${data.person.name}`;
+                        }
+                        resultDetail.textContent = detailText;
+                        
+                        if (data.matches && data.matches.length > 0) {
+                            showMatches(data.matches);
+                        }
+                    } else {
+                        resultBox.className = 'result-box show not-found';
+                        resultTitle.textContent = 'Person Not Found';
+                        resultDetail.textContent = `No matching person found in database. Match score: ${(data.score * 100).toFixed(0)}%`;
+                        document.getElementById('matchesSection').style.display = 'none';
+                    }
+                    
+                    setTimeout(() => {
+                        reportForm.reset();
+                        photoInfo.textContent = 'No file selected';
+                    }, 500);
+                } else {
+                    showMessage(data.error || 'Failed to submit report', 'error');
+                }
+            } catch (error) {
+                showMessage('An error occurred. Please try again.', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                loading.classList.remove('show');
+            }
+        });
+        
+        function showMessage(text, type) {
+            message.textContent = text;
+            message.className = `message ${type}`;
+        }
+        
+        function showMatches(matches) {
+            const matchesSection = document.getElementById('matchesSection');
+            const matchesList = document.getElementById('matchesList');
+            
+            if (matches && matches.length > 0) {
+                matchesList.innerHTML = '';
+                matches.forEach(match => {
+                    const matchItem = document.createElement('div');
+                    matchItem.className = 'match-item';
+                    
+                    // Create image element
+                    const img = document.createElement('img');
+                    img.className = 'match-image';
+                    img.src = `/facealertapi/${match.name}`;
+                    img.alt = match.name;
+                    img.onerror = function() {
+                        // If image fails to load, show a placeholder
+                        this.style.display = 'none';
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'match-image';
+                        placeholder.style.backgroundColor = '#f0f0f0';
+                        placeholder.style.display = 'flex';
+                        placeholder.style.alignItems = 'center';
+                        placeholder.style.justifyContent = 'center';
+                        placeholder.style.fontSize = '10px';
+                        placeholder.style.color = '#666';
+                        placeholder.textContent = 'No Image';
+                        matchItem.insertBefore(placeholder, matchItem.firstChild);
+                    };
+                    
+                    matchItem.innerHTML = `
+                        <div class="match-info">
+                            <div class="match-name">${match.name}</div>
+                            <div class="match-score">${(match.similarity * 100).toFixed(0)}% match</div>
+                        </div>
+                    `;
+                    
+                    // Insert image at the beginning
+                    matchItem.insertBefore(img, matchItem.firstChild);
+                    matchesList.appendChild(matchItem);
+                });
+                matchesSection.style.display = 'block';
+            } else {
+                matchesSection.style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
