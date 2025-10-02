@@ -1,5 +1,5 @@
 """
-Flask web application for FaceAlert Admin Dashboard - SPEED OPTIMIZED VERSION.
+Flask web application for FaceAlert Admin Dashboard - INDIVIDUAL PHOTOS ENHANCED VERSION.
 """
 import os
 import cv2
@@ -116,14 +116,47 @@ def submit_report():
             local_image_files = get_image_files(LOCAL_IMAGES_FOLDER)
             print(f"Found {len(local_image_files)} images in local folder (processing max {MAX_FILES_TO_PROCESS})")
             
-            # ⚡ OPTIMIZED: Sort by file size (larger = better quality) - MUCH faster than face detection
-            local_image_files.sort(key=lambda x: os.path.getsize(x) if os.path.exists(x) else 0, reverse=True)
+            # 🎯 ENHANCED: Smart sorting - prioritize individual photos AND group photos
+            def smart_priority_sort(image_path):
+                try:
+                    # Get file size for quality
+                    file_size = os.path.getsize(image_path) if os.path.exists(image_path) else 0
+                    
+                    # Quick face count check for prioritization
+                    temp_image = cv2.imread(image_path)
+                    if temp_image is not None:
+                        temp_rgb = cv2.cvtColor(temp_image, cv2.COLOR_BGR2RGB)
+                        # Resize for quick processing
+                        h, w = temp_rgb.shape[:2]
+                        if w > 400:
+                            scale = 400 / w
+                            new_h, new_w = int(h * scale), int(w * scale)
+                            temp_rgb = cv2.resize(temp_rgb, (new_w, new_h))
+                        
+                        faces = processor.detect_faces(temp_rgb)
+                        face_count = len(faces) if faces else 0
+                        
+                        # 🎯 PRIORITY: Individual photos (1 face) get highest priority
+                        if face_count == 1:
+                            return (1000, file_size)  # Individual photos first
+                        elif face_count > 1:
+                            return (500 + face_count, file_size)  # Group photos second, by face count
+                        else:
+                            return (0, file_size)  # No faces last
+                    return (0, file_size)
+                except:
+                    return (0, 0)
             
+            # Sort by smart priority (individual photos first, then group photos)
+            local_image_files.sort(key=smart_priority_sort, reverse=True)
+            
+            individual_photos_found = 0
+            group_photos_found = 0
             excellent_match_count = 0  # ⚡ OPTIMIZED: Early termination counter
             
             for idx, image_path in enumerate(local_image_files[:MAX_FILES_TO_PROCESS]):
                 # ⚡ OPTIMIZED: Early termination if we have enough excellent matches
-                if excellent_match_count >= 10:
+                if excellent_match_count >= 15:  # Increased to get more variety
                     print(f"⚡ Early termination: Found {excellent_match_count} excellent matches, stopping...")
                     break
                 
@@ -147,26 +180,44 @@ def submit_report():
                                     )
                                     best_similarity = max(best_similarity, similarity)
                             
-                            # Boost similarity for group photos (more faces = higher priority)
-                            group_boost = 1.0 + (face_count - 1) * 0.1  # 10% boost per additional face
+                            # 🎯 ENHANCED: Different boosts for individual vs group photos
+                            if face_count == 1:
+                                # Individual photos get higher boost for better visibility
+                                individual_boost = 1.25  # 25% boost for individual photos
+                                medium_face_boost = 1.2   # 20% boost for medium faces in individual photos
+                                threshold = 0.25  # Lower threshold for individual photos
+                            else:
+                                # Group photos get standard boost
+                                individual_boost = 1.0
+                                group_boost = 1.0 + (face_count - 1) * 0.1  # 10% boost per additional face
+                                medium_face_boost = 1.15 if face_count > 5 else 1.0
+                                threshold = 0.3 if face_count > 1 else 0.4
                             
-                            # ⚡ OPTIMIZED: Simplified medium face boost (no extra detection needed)
-                            medium_face_boost = 1.15 if face_count > 5 else 1.0
-                            
-                            adjusted_similarity = best_similarity * group_boost * medium_face_boost
-                            
-                            # Lower threshold for group photos to catch more matches
-                            threshold = 0.3 if face_count > 1 else 0.4
+                            # Apply appropriate boosts
+                            if face_count == 1:
+                                adjusted_similarity = best_similarity * individual_boost * medium_face_boost
+                            else:
+                                adjusted_similarity = best_similarity * group_boost * medium_face_boost
                             
                             if adjusted_similarity > threshold:
+                                is_individual = face_count == 1
+                                
                                 matched_local_images.append({
                                     'path': image_path,
                                     'name': os.path.basename(image_path),
                                     'similarity': float(adjusted_similarity),
                                     'face_count': face_count,
-                                    'is_group_photo': face_count > 1
+                                    'is_group_photo': face_count > 1,
+                                    'is_individual_photo': is_individual
                                 })
-                                print(f"Match found: {os.path.basename(image_path)} with similarity {adjusted_similarity:.2f} (faces: {face_count})")
+                                
+                                # Track photo types
+                                if is_individual:
+                                    individual_photos_found += 1
+                                else:
+                                    group_photos_found += 1
+                                
+                                print(f"Match found: {os.path.basename(image_path)} with similarity {adjusted_similarity:.2f} (faces: {face_count}) {'[INDIVIDUAL]' if is_individual else '[GROUP]'}")
                                 
                                 # ⚡ OPTIMIZED: Track excellent matches for early termination
                                 if adjusted_similarity > 1.0:
@@ -175,7 +226,17 @@ def submit_report():
                     print(f"Error processing local file {image_path}: {str(e)}")
                     continue
             
-            matched_local_images.sort(key=lambda x: x['similarity'], reverse=True)
+            # 🎯 ENHANCED: Sort to prioritize individual photos in results
+            def result_priority(item):
+                # Individual photos get priority in final results
+                if item.get('is_individual_photo', False):
+                    return (item['similarity'] + 0.5, item['similarity'])  # Boost individual photos
+                else:
+                    return (item['similarity'], item['similarity'])
+            
+            matched_local_images.sort(key=result_priority, reverse=True)
+            
+            print(f"📊 Results: {individual_photos_found} individual photos, {group_photos_found} group photos found")
             
         except Exception as e:
             print(f"Error comparing with local images: {str(e)}")
@@ -192,7 +253,9 @@ def submit_report():
         response_data = {
             'found': found or len(matched_local_images) > 0,
             'score': round(display_score, 2),
-            'matches': matched_local_images[:5]
+            'matches': matched_local_images[:8],  # Show more results to include both types
+            'individual_photos_found': individual_photos_found,
+            'group_photos_found': group_photos_found
         }
         
         if found and person_data:
@@ -202,6 +265,7 @@ def submit_report():
             }
         
         print(f"Result: Found={found}, Score={score}, Local Top Score={local_top_score}, Local Matches={len(matched_local_images)}")
+        print(f"Individual photos: {individual_photos_found}, Group photos: {group_photos_found}")
         print(f"Response data: {response_data}")
         return jsonify(response_data)
         
