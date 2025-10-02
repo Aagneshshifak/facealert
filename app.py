@@ -162,7 +162,17 @@ def submit_report():
                             
                             # Boost similarity for group photos (more faces = higher priority)
                             group_boost = 1.0 + (face_count - 1) * 0.1  # 10% boost per additional face
-                            adjusted_similarity = best_similarity * group_boost
+                            
+                            # Additional boost for medium-sized faces (30-70 pixels)
+                            medium_face_boost = 1.0
+                            if hasattr(processor, 'detect_faces'):
+                                # Check if any faces are medium-sized
+                                temp_faces = processor.detect_faces(local_image_rgb)
+                                medium_faces = [f for f in temp_faces if f.get('is_medium_face', False)]
+                                if medium_faces:
+                                    medium_face_boost = 1.15  # 15% boost for medium-sized faces
+                            
+                            adjusted_similarity = best_similarity * group_boost * medium_face_boost
                             
                             # Lower threshold for group photos to catch more matches
                             threshold = 0.3 if face_count > 1 else 0.4

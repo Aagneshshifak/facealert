@@ -81,23 +81,43 @@ class FaceProcessor:
             # Detect faces
             faces = self.app.get(image)
             
-            # Filter faces by minimum size
+            # Filter faces with special handling for medium-sized faces (30-70 pixels)
             valid_faces = []
             for face in faces:
                 bbox = face.bbox.astype(int)
                 width = bbox[2] - bbox[0]
                 height = bbox[3] - bbox[1]
+                face_size = min(width, height)
                 
-                if width >= MIN_FACE_SIZE and height >= MIN_FACE_SIZE:
-                    face_info = {
-                        'bbox': (bbox[0], bbox[1], width, height),
-                        'confidence': float(face.det_score),
-                        'embedding': face.embedding,
-                        'landmarks': face.kps if hasattr(face, 'kps') else None
-                    }
+                # Accept faces that meet minimum size OR are in the medium range (30-70 pixels)
+                if (width >= MIN_FACE_SIZE and height >= MIN_FACE_SIZE) or (30 <= face_size <= 70):
+                    # Special processing for medium-sized faces
+                    if 30 <= face_size <= 70:
+                        # Boost confidence for medium-sized faces in group photos
+                        confidence_boost = 1.2 if face.det_score > 0.5 else 1.0
+                        adjusted_confidence = min(1.0, face.det_score * confidence_boost)
+                        
+                        face_info = {
+                            'bbox': (bbox[0], bbox[1], width, height),
+                            'confidence': float(adjusted_confidence),
+                            'embedding': face.embedding,
+                            'landmarks': face.kps if hasattr(face, 'kps') else None,
+                            'is_medium_face': True,
+                            'face_size': face_size
+                        }
+                        logger.info(f"Medium-sized face detected: {width}x{height} (size: {face_size})")
+                    else:
+                        face_info = {
+                            'bbox': (bbox[0], bbox[1], width, height),
+                            'confidence': float(face.det_score),
+                            'embedding': face.embedding,
+                            'landmarks': face.kps if hasattr(face, 'kps') else None,
+                            'is_medium_face': False,
+                            'face_size': face_size
+                        }
                     valid_faces.append(face_info)
                 else:
-                    logger.debug(f"Filtered out small face: {width}x{height}")
+                    logger.debug(f"Filtered out face: {width}x{height} (size: {face_size})")
             
             return valid_faces
             
@@ -115,12 +135,19 @@ class FaceProcessor:
         Returns:
             Face embedding vector or None if no face found
         """
-        # Resize image for faster processing (max 800px width)
+        # Smart resizing for better medium-sized face detection
         h, w = image.shape[:2]
-        if w > 800:
+        
+        # For medium-sized faces, use different resizing strategy
+        if w > 1200:  # Large images - resize more aggressively for medium faces
+            scale = 1200 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        elif w > 800:  # Medium images - moderate resize
             scale = 800 / w
             new_h, new_w = int(h * scale), int(w * scale)
             image = cv2.resize(image, (new_w, new_h))
+        # Small images (w <= 800) - keep original size for better medium face detection
         
         faces = self.detect_faces(image)
         
@@ -144,12 +171,19 @@ class FaceProcessor:
         Returns:
             List of face embedding vectors
         """
-        # Resize image for faster processing (max 800px width)
+        # Smart resizing for better medium-sized face detection
         h, w = image.shape[:2]
-        if w > 800:
+        
+        # For medium-sized faces, use different resizing strategy
+        if w > 1200:  # Large images - resize more aggressively for medium faces
+            scale = 1200 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        elif w > 800:  # Medium images - moderate resize
             scale = 800 / w
             new_h, new_w = int(h * scale), int(w * scale)
             image = cv2.resize(image, (new_w, new_h))
+        # Small images (w <= 800) - keep original size for better medium face detection
         
         faces = self.detect_faces(image)
         
