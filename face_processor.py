@@ -115,6 +115,13 @@ class FaceProcessor:
         Returns:
             Face embedding vector or None if no face found
         """
+        # Resize image for faster processing (max 800px width)
+        h, w = image.shape[:2]
+        if w > 800:
+            scale = 800 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        
         faces = self.detect_faces(image)
         
         if not faces:
@@ -137,6 +144,13 @@ class FaceProcessor:
         Returns:
             List of face embedding vectors
         """
+        # Resize image for faster processing (max 800px width)
+        h, w = image.shape[:2]
+        if w > 800:
+            scale = 800 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        
         faces = self.detect_faces(image)
         
         if not faces:

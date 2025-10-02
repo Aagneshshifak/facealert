@@ -110,11 +110,34 @@ def submit_report():
         # Step 4: Compare ALL uploaded faces with ALL database faces
         print("Step 4: Comparing ALL faces in uploaded image with database images...")
         matched_local_images = []
-        MAX_FILES_TO_PROCESS = 150
+        MAX_FILES_TO_PROCESS = 75  # Increased to focus on group photos
         
         try:
             local_image_files = get_image_files(LOCAL_IMAGES_FOLDER)
             print(f"Found {len(local_image_files)} images in local folder (processing max {MAX_FILES_TO_PROCESS})")
+            
+            # Sort images to prioritize group photos (images with multiple faces)
+            def get_group_photo_priority(image_path):
+                try:
+                    # Quick face count check to prioritize group photos
+                    temp_image = cv2.imread(image_path)
+                    if temp_image is not None:
+                        temp_rgb = cv2.cvtColor(temp_image, cv2.COLOR_BGR2RGB)
+                        # Resize for quick processing
+                        h, w = temp_rgb.shape[:2]
+                        if w > 400:
+                            scale = 400 / w
+                            new_h, new_w = int(h * scale), int(w * scale)
+                            temp_rgb = cv2.resize(temp_rgb, (new_w, new_h))
+                        
+                        faces = processor.detect_faces(temp_rgb)
+                        return len(faces) if faces else 0
+                except:
+                    return 0
+                return 0
+            
+            # Sort by group photo priority (more faces = higher priority)
+            local_image_files.sort(key=get_group_photo_priority, reverse=True)
             
             for idx, image_path in enumerate(local_image_files[:MAX_FILES_TO_PROCESS]):
                 try:
@@ -128,6 +151,8 @@ def submit_report():
                         if local_embeddings:
                             # Compare each uploaded face with each database face
                             best_similarity = 0.0
+                            face_count = len(local_embeddings)
+                            
                             for uploaded_embedding in uploaded_embeddings:
                                 for local_embedding in local_embeddings:
                                     similarity = np.dot(uploaded_embedding, local_embedding) / (
@@ -135,13 +160,22 @@ def submit_report():
                                     )
                                     best_similarity = max(best_similarity, similarity)
                             
-                            if best_similarity > 0.2:  # Ultra-low threshold for group photos
+                            # Boost similarity for group photos (more faces = higher priority)
+                            group_boost = 1.0 + (face_count - 1) * 0.1  # 10% boost per additional face
+                            adjusted_similarity = best_similarity * group_boost
+                            
+                            # Lower threshold for group photos to catch more matches
+                            threshold = 0.3 if face_count > 1 else 0.4
+                            
+                            if adjusted_similarity > threshold:
                                 matched_local_images.append({
                                     'path': image_path,
                                     'name': os.path.basename(image_path),
-                                    'similarity': float(best_similarity)
+                                    'similarity': float(adjusted_similarity),
+                                    'face_count': face_count,
+                                    'is_group_photo': face_count > 1
                                 })
-                                print(f"Match found: {os.path.basename(image_path)} with similarity {best_similarity:.2f}")
+                                print(f"Match found: {os.path.basename(image_path)} with similarity {adjusted_similarity:.2f} (faces: {face_count})")
                 except Exception as e:
                     print(f"Error processing local file {image_path}: {str(e)}")
                     continue
