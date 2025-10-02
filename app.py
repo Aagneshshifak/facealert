@@ -103,7 +103,7 @@ def submit_report():
         
         # Step 3: Compare with stored embeddings
         print("Step 3: Comparing with stored embeddings...")
-        found, score, person_data = embeddings_store.find_match(embedding, threshold=0.6)
+        found, score, person_data = embeddings_store.find_match(embedding, threshold=0.3)
         
         # Step 4: Compare with images from local folder
         print("Step 4: Comparing with local folder images...")
@@ -127,7 +127,7 @@ def submit_report():
                                 np.linalg.norm(embedding) * np.linalg.norm(local_embedding)
                             )
                             
-                            if similarity > 0.6:
+                            if similarity > 0.3:
                                 matched_local_images.append({
                                     'path': image_path,
                                     'name': os.path.basename(image_path),
