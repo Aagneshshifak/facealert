@@ -105,12 +105,12 @@ def submit_report():
         
         # Step 3: Compare with stored embeddings (using first uploaded face)
         print("Step 3: Comparing with stored embeddings...")
-        found, score, person_data = embeddings_store.find_match(uploaded_embeddings[0], threshold=0.2)
+        found, score, person_data = embeddings_store.find_match(uploaded_embeddings[0], threshold=0.4)
         
         # Step 4: Compare ALL uploaded faces with ALL database faces
         print("Step 4: Comparing ALL faces in uploaded image with database images...")
         matched_local_images = []
-        MAX_FILES_TO_PROCESS = 50  # ⚡ OPTIMIZED: Reduced from 75 for speed (33% faster)
+        MAX_FILES_TO_PROCESS = 200  # 🔍 MAXIMUM: Process all available images to find your group photo
         
         try:
             local_image_files = get_image_files(LOCAL_IMAGES_FOLDER)
@@ -155,9 +155,9 @@ def submit_report():
             excellent_match_count = 0  # ⚡ OPTIMIZED: Early termination counter
             
             for idx, image_path in enumerate(local_image_files[:MAX_FILES_TO_PROCESS]):
-                # ⚡ OPTIMIZED: Early termination if we have enough excellent matches
-                if excellent_match_count >= 15:  # Increased to get more variety
-                    print(f"⚡ Early termination: Found {excellent_match_count} excellent matches, stopping...")
+                # ⚡ OPTIMIZED: Early termination if we have enough high-quality matches
+                if excellent_match_count >= 5:  # Reduced to focus on quality over quantity
+                    print(f"⚡ Early termination: Found {excellent_match_count} high-quality matches, stopping...")
                     break
                 
                 try:
@@ -180,25 +180,27 @@ def submit_report():
                                     )
                                     best_similarity = max(best_similarity, similarity)
                             
-                            # 🎯 ENHANCED: Different boosts for individual vs group photos
-                            if face_count == 1:
-                                # Individual photos get higher boost for better visibility
-                                individual_boost = 1.25  # 25% boost for individual photos
-                                medium_face_boost = 1.2   # 20% boost for medium faces in individual photos
-                                threshold = 0.25  # Lower threshold for individual photos
-                            else:
-                                # Group photos get standard boost
-                                individual_boost = 1.0
-                                group_boost = 1.0 + (face_count - 1) * 0.1  # 10% boost per additional face
-                                medium_face_boost = 1.15 if face_count > 5 else 1.0
-                                threshold = 0.3 if face_count > 1 else 0.4
+                            # 🎯 BALANCED: Reasonable thresholds to prevent false positives while allowing matches
+                            # Use raw similarity without artificial boosts
+                            raw_similarity = best_similarity
                             
-                            # Apply appropriate boosts
+                            # Set thresholds to show pictures above 40% similarity
                             if face_count == 1:
-                                adjusted_similarity = best_similarity * individual_boost * medium_face_boost
+                                # Individual photos: 40% minimum
+                                threshold = 0.4
                             else:
-                                adjusted_similarity = best_similarity * group_boost * medium_face_boost
+                                # Group photos: 40% minimum (even for 12px faces)
+                                threshold = 0.4
                             
+                            # Use raw similarity without boosts
+                            adjusted_similarity = raw_similarity
+                            
+                            # 🎯 BALANCED: Face quality validation with reasonable thresholds
+                            # Only consider matches if similarity meets the threshold
+                            print(f"🔍 Similarity check: {adjusted_similarity:.3f} vs threshold {threshold:.3f} for {os.path.basename(image_path)}")
+                            # Special debug for very low similarities to catch your group photo
+                            if adjusted_similarity > 0.01 and adjusted_similarity < threshold:
+                                print(f"🔍 LOW SIMILARITY: {adjusted_similarity:.3f} for {os.path.basename(image_path)} - might be your group photo!")
                             if adjusted_similarity > threshold:
                                 is_individual = face_count == 1
                                 
@@ -220,21 +222,57 @@ def submit_report():
                                 print(f"Match found: {os.path.basename(image_path)} with similarity {adjusted_similarity:.2f} (faces: {face_count}) {'[INDIVIDUAL]' if is_individual else '[GROUP]'}")
                                 
                                 # ⚡ OPTIMIZED: Track excellent matches for early termination
-                                if adjusted_similarity > 1.0:
+                                # Only count as excellent if similarity is very high (0.8+)
+                                if adjusted_similarity > 0.8:
                                     excellent_match_count += 1
                 except Exception as e:
                     print(f"Error processing local file {image_path}: {str(e)}")
                     continue
             
-            # 🎯 ENHANCED: Sort to prioritize individual photos in results
+            # 🎯 ENHANCED: Sort by similarity and filter low-quality matches
             def result_priority(item):
-                # Individual photos get priority in final results
-                if item.get('is_individual_photo', False):
-                    return (item['similarity'] + 0.5, item['similarity'])  # Boost individual photos
-                else:
-                    return (item['similarity'], item['similarity'])
+                # Sort purely by similarity (no artificial boosts)
+                return item['similarity']
             
             matched_local_images.sort(key=result_priority, reverse=True)
+            
+            # 🎯 FINAL FILTER: Show pictures above 40% similarity (including 12px faces in group photos)
+            high_confidence_matches = [match for match in matched_local_images if match['similarity'] >= 0.4]
+            print(f"🔍 DEBUG: Found {len(high_confidence_matches)} matches before deduplication")
+            
+            # 🎯 SIMPLE DEDUPLICATION: Remove duplicates by exact filename matching
+            seen_filenames = set()
+            unique_matches = []
+            
+            for match in high_confidence_matches:
+                filename = match['name']
+                # Simple approach: if we've seen this exact filename before, skip it
+                if filename not in seen_filenames:
+                    seen_filenames.add(filename)
+                    unique_matches.append(match)
+                    print(f"✅ Added: {filename}")
+                else:
+                    print(f"🚫 Skipped duplicate: {filename}")
+            
+            # 🎯 SECOND PASS: Remove similar filenames (like "file.jpeg" and "file (1).jpeg")
+            final_matches = []
+            seen_base_names = set()
+            
+            for match in unique_matches:
+                filename = match['name']
+                # Extract base name without variations
+                base_name = filename.replace(' (1)', '').replace(' (2)', '').replace(' (3)', '')
+                base_name = base_name.replace(' (1)', '').replace(' (2)', '').replace(' (3)', '')
+                
+                if base_name not in seen_base_names:
+                    seen_base_names.add(base_name)
+                    final_matches.append(match)
+                    print(f"✅ Final: {filename}")
+                else:
+                    print(f"🚫 Similar: {filename} (base: {base_name})")
+            
+            matched_local_images = final_matches
+            print(f"📊 Final deduplication: {len(high_confidence_matches)} -> {len(unique_matches)} -> {len(final_matches)} matches")
             
             print(f"📊 Results: {individual_photos_found} individual photos, {group_photos_found} group photos found")
             
@@ -253,9 +291,11 @@ def submit_report():
         response_data = {
             'found': found or len(matched_local_images) > 0,
             'score': round(display_score, 2),
-            'matches': matched_local_images[:8],  # Show more results to include both types
+            'matches': matched_local_images[:15],  # Show maximum results to find your group photo
             'individual_photos_found': individual_photos_found,
-            'group_photos_found': group_photos_found
+            'group_photos_found': group_photos_found,
+            'quality_filter': '40% similarity threshold to show high-confidence matches (including 12px faces in group photos)',
+            'total_high_confidence_matches': len(matched_local_images)
         }
         
         if found and person_data:
@@ -264,8 +304,9 @@ def submit_report():
                 'id': person_data['id']
             }
         
-        print(f"Result: Found={found}, Score={score}, Local Top Score={local_top_score}, Local Matches={len(matched_local_images)}")
+        print(f"Result: Found={found}, Score={score}, Local Top Score={local_top_score}, High-Confidence Matches={len(matched_local_images)}")
         print(f"Individual photos: {individual_photos_found}, Group photos: {group_photos_found}")
+        print(f"🎯 QUALITY FILTER: 40% similarity threshold to show high-confidence matches (including 12px faces in group photos)")
         print(f"Response data: {response_data}")
         return jsonify(response_data)
         
@@ -303,4 +344,4 @@ def request_entity_too_large(error):
 
 if __name__ == '__main__':
     debug_mode = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    app.run(host='0.0.0.0', port=5000, debug=debug_mode)
+    app.run(host='0.0.0.0', port=5005, debug=debug_mode)

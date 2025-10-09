@@ -16,7 +16,7 @@ GPU_DEVICE_ID = int(os.getenv("GPU_DEVICE_ID", "0"))
 # Processing configuration
 BATCH_SIZE = 32  # Images to process in a single batch
 MAX_IMAGE_SIZE = 1024  # Maximum image dimension for processing
-MIN_FACE_SIZE = 50  # Minimum face size for detection
+MIN_FACE_SIZE = 12  # Minimum face size for detection (supports group photos with tiny faces)
 
 # File handling
 SUPPORTED_IMAGE_FORMATS = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
