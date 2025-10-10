@@ -95,13 +95,14 @@ def submit_report():
         uploaded_embeddings = processor.extract_all_embeddings(image_rgb)
         
         if not uploaded_embeddings:
+            print("❌ No faces detected in uploaded image")
             return jsonify({
                 'found': False,
                 'score': 0.0,
                 'message': 'No face detected in the photo'
             })
         
-        print(f"Found {len(uploaded_embeddings)} faces in uploaded image")
+        print(f"✅ Found {len(uploaded_embeddings)} faces in uploaded image")
         
         # Step 3: Compare with stored embeddings (using first uploaded face)
         print("Step 3: Comparing with stored embeddings...")

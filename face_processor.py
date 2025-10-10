@@ -51,8 +51,8 @@ class FaceProcessor:
                 providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.using_gpu else ['CPUExecutionProvider']
             )
             
-            # Prepare the model with context
-            self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
+            # Prepare the model with context - use larger detection size for better single person image detection
+            self.app.prepare(ctx_id=ctx_id, det_size=(1024, 1024))
             
             self.model_loaded = True
             logger.info(f"Successfully initialized {ARCFACE_MODEL_NAME} model on {device_info}")
@@ -80,6 +80,7 @@ class FaceProcessor:
         try:
             # Detect faces
             faces = self.app.get(image)
+            logger.info(f"Raw face detection found {len(faces) if faces else 0} faces")
             
             # Filter faces with special handling for small faces (12-70 pixels) in group photos
             valid_faces = []
@@ -89,8 +90,8 @@ class FaceProcessor:
                 height = bbox[3] - bbox[1]
                 face_size = min(width, height)
                 
-                # Accept faces that meet minimum size (12px) OR are in the small-medium range (12-70 pixels)
-                if (width >= MIN_FACE_SIZE and height >= MIN_FACE_SIZE) or (12 <= face_size <= 70):
+                # Accept all faces that are at least 12px (minimum size for group photos) or larger
+                if face_size >= MIN_FACE_SIZE:
                     # Special processing for small faces in group photos
                     if 12 <= face_size <= 70:
                         # Boost confidence for small faces in group photos
@@ -113,6 +114,7 @@ class FaceProcessor:
                         }
                         logger.info(f"Small/medium-sized face detected: {width}x{height} (size: {face_size})")
                     else:
+                        # Larger faces in single person images (70px+)
                         face_info = {
                             'bbox': (bbox[0], bbox[1], width, height),
                             'confidence': float(face.det_score),
@@ -121,9 +123,10 @@ class FaceProcessor:
                             'is_small_face': False,
                             'face_size': face_size
                         }
+                        logger.info(f"Large face detected (single person): {width}x{height} (size: {face_size})")
                     valid_faces.append(face_info)
                 else:
-                    logger.debug(f"Filtered out face: {width}x{height} (size: {face_size})")
+                    logger.warning(f"Filtered out face: {width}x{height} (size: {face_size}) - below minimum size {MIN_FACE_SIZE}")
             
             return valid_faces
             
