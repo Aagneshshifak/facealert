@@ -51,8 +51,8 @@ class FaceProcessor:
                 providers=['CUDAExecutionProvider', 'CPUExecutionProvider'] if self.using_gpu else ['CPUExecutionProvider']
             )
             
-            # Prepare the model with context
-            self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
+            # Prepare the model with context - use larger detection size for better single person image detection
+            self.app.prepare(ctx_id=ctx_id, det_size=(1024, 1024))
             
             self.model_loaded = True
             logger.info(f"Successfully initialized {ARCFACE_MODEL_NAME} model on {device_info}")
@@ -80,24 +80,53 @@ class FaceProcessor:
         try:
             # Detect faces
             faces = self.app.get(image)
+            logger.info(f"Raw face detection found {len(faces) if faces else 0} faces")
             
-            # Filter faces by minimum size
+            # Filter faces with special handling for small faces (12-70 pixels) in group photos
             valid_faces = []
             for face in faces:
                 bbox = face.bbox.astype(int)
                 width = bbox[2] - bbox[0]
                 height = bbox[3] - bbox[1]
+                face_size = min(width, height)
                 
-                if width >= MIN_FACE_SIZE and height >= MIN_FACE_SIZE:
-                    face_info = {
-                        'bbox': (bbox[0], bbox[1], width, height),
-                        'confidence': float(face.det_score),
-                        'embedding': face.embedding,
-                        'landmarks': face.kps if hasattr(face, 'kps') else None
-                    }
+                # Accept all faces that are at least 12px (minimum size for group photos) or larger
+                if face_size >= MIN_FACE_SIZE:
+                    # Special processing for small faces in group photos
+                    if 12 <= face_size <= 70:
+                        # Boost confidence for small faces in group photos
+                        if face_size <= 20:  # Very small faces (12-20px)
+                            confidence_boost = 1.5 if face.det_score > 0.3 else 1.2
+                        elif face_size <= 40:  # Small faces (20-40px)
+                            confidence_boost = 1.3 if face.det_score > 0.4 else 1.1
+                        else:  # Medium faces (40-70px)
+                            confidence_boost = 1.2 if face.det_score > 0.5 else 1.0
+                        
+                        adjusted_confidence = min(1.0, face.det_score * confidence_boost)
+                        
+                        face_info = {
+                            'bbox': (bbox[0], bbox[1], width, height),
+                            'confidence': float(adjusted_confidence),
+                            'embedding': face.embedding,
+                            'landmarks': face.kps if hasattr(face, 'kps') else None,
+                            'is_small_face': True,
+                            'face_size': face_size
+                        }
+                        logger.info(f"Small/medium-sized face detected: {width}x{height} (size: {face_size})")
+                    else:
+                        # Larger faces in single person images (70px+)
+                        face_info = {
+                            'bbox': (bbox[0], bbox[1], width, height),
+                            'confidence': float(face.det_score),
+                            'embedding': face.embedding,
+                            'landmarks': face.kps if hasattr(face, 'kps') else None,
+                            'is_small_face': False,
+                            'face_size': face_size
+                        }
+                        logger.info(f"Large face detected (single person): {width}x{height} (size: {face_size})")
                     valid_faces.append(face_info)
                 else:
-                    logger.debug(f"Filtered out small face: {width}x{height}")
+                    logger.warning(f"Filtered out face: {width}x{height} (size: {face_size}) - below minimum size {MIN_FACE_SIZE}")
             
             return valid_faces
             
@@ -115,6 +144,24 @@ class FaceProcessor:
         Returns:
             Face embedding vector or None if no face found
         """
+        # Smart resizing for better small face detection in group photos
+        h, w = image.shape[:2]
+        
+        # For small faces (12px+), use different resizing strategy
+        if w > 1600:  # Very large images - resize more aggressively for small faces
+            scale = 1600 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        elif w > 1200:  # Large images - moderate resize for small faces
+            scale = 1200 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        elif w > 800:  # Medium images - light resize
+            scale = 800 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        # Small images (w <= 800) - keep original size for better small face detection
+        
         faces = self.detect_faces(image)
         
         if not faces:
@@ -126,6 +173,47 @@ class FaceProcessor:
             faces.sort(key=lambda x: x['bbox'][2] * x['bbox'][3], reverse=True)
         
         return faces[0]['embedding']
+    
+    def extract_all_embeddings(self, image: np.ndarray) -> List[np.ndarray]:
+        """
+        Extract ALL face embeddings from an image (for group photos).
+        
+        Args:
+            image: Input image in RGB format
+            
+        Returns:
+            List of face embedding vectors
+        """
+        # Smart resizing for better small face detection in group photos
+        h, w = image.shape[:2]
+        
+        # For small faces (12px+), use different resizing strategy
+        if w > 1600:  # Very large images - resize more aggressively for small faces
+            scale = 1600 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        elif w > 1200:  # Large images - moderate resize for small faces
+            scale = 1200 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        elif w > 800:  # Medium images - light resize
+            scale = 800 / w
+            new_h, new_w = int(h * scale), int(w * scale)
+            image = cv2.resize(image, (new_w, new_h))
+        # Small images (w <= 800) - keep original size for better small face detection
+        
+        faces = self.detect_faces(image)
+        
+        if not faces:
+            return []
+        
+        # Return ALL face embeddings, not just the largest
+        embeddings = []
+        for face in faces:
+            embeddings.append(face['embedding'])
+        
+        logger.info(f"Extracted {len(embeddings)} face embeddings from image")
+        return embeddings
     
     def process_image(self, image_path: str) -> List[Dict]:
         """
